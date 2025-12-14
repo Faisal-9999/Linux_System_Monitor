@@ -1,0 +1,10 @@
+TWO MENUS
+
+ONE CONTAINS TOTAL SYSTEM-WIDE RAM, CPU, NETWORK and READ/WRITE ON DISk
+
+The other will contain per process CPU, RAM, NETWORK, READ/WRITE USAGE
+
+DB WILL Create a separate table for each session containing the average usage of these stats for 
+each process
+
+Further plans will be decided later ON
