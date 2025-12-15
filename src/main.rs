@@ -2,7 +2,6 @@ mod app;
 mod database_connect;
 mod process_data;
 mod log_parser;
-mod process_list;
 
 use crate::log_parser::*;
 

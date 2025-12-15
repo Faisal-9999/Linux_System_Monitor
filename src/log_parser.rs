@@ -49,6 +49,7 @@ enum AttributeType {
 }
 
 use AttributeType::*;
+use iced::wgpu::naga::proc;
 
 struct AttributeAndValue {
     att_type : AttributeType,
@@ -61,18 +62,23 @@ impl AttributeAndValue {
     }
 }
 
-fn cpu_usage_calculator(pid : &mut u32) -> u32 {
+fn cpu_usage_calculator(pid : u32) -> u32 {
     0
 }
+
 fn process_data_definer(file : File) -> io::Result<ProcessData> {
 
-    let mut process_name = String::new();
-    let mut pid : u32 = 0;
-    let mut ppid : u32 = 0;
-    let mut cpu_usage : u32 = 0;
-    let mut threads_used : u32 = 0;
-    let mut ram_usage : u32 = 0;
-    let mut process_state : String = String::new();
+    let mut process_name: Option<String> = None;
+    let mut pid : Option<u32> = None;
+    let mut ppid: Option<u32> = None;
+    let mut cpu_usage : Option<u32> = None;
+    let mut threads_used : Option<u32> = None;
+    let mut ram_usage : Option<u32> = None;
+    let mut process_state : Option<String> = None;
+
+    //All data types above will turn into Option types for now below code will be
+    //refactored to account for Option types
+    //imma kms 
 
     /*
         DATA THAT NEEDS TO BE PARSED FROM FILES ARE STATED ABOVE 
@@ -139,10 +145,10 @@ fn process_data_definer(file : File) -> io::Result<ProcessData> {
         }
 
         match type_check {
-            Name => process_name = String::from(attribute_value.trim()),
-            State => process_state = String::from(attribute_value.trim()), 
+            Name => process_name = Some(String::from(attribute_value.trim())),
+            State => process_state = Some(String::from(attribute_value.trim())), 
             Pid => pid = match attribute_value.trim().parse::<u32>() {
-                Ok(val) => val,
+                Ok(val) => Some(val),
                 Err(e) => {
                     println!("pid {}", attribute_value);
                     panic!("{}", e)
@@ -153,7 +159,7 @@ fn process_data_definer(file : File) -> io::Result<ProcessData> {
                 cleaned_val = u32_cleaner(attribute_value);
             
                 ppid = match cleaned_val.trim().parse::<u32>() {
-                    Ok(val) => val,
+                    Ok(val) => Some(val),
                     Err(e) => {
                         println!("ppid {}", cleaned_val);
                         panic!("{}", e)
@@ -165,7 +171,7 @@ fn process_data_definer(file : File) -> io::Result<ProcessData> {
                 cleaned_val = u32_cleaner(attribute_value);
 
                 threads_used = match cleaned_val.trim().parse::<u32>() {
-                    Ok(val) => val,
+                    Ok(val) => Some(val),
                     Err(e) => {
                     println!("threads {}", cleaned_val);
                     panic!("{}", e)
@@ -177,7 +183,7 @@ fn process_data_definer(file : File) -> io::Result<ProcessData> {
                 cleaned_val = u32_cleaner(attribute_value);
                 
                 ram_usage = match cleaned_val.trim().parse::<u32>() {
-                    Ok(val) => val,
+                    Ok(val) => Some(val),
                     Err(e) => {
                         println!("ram {}", cleaned_val);
                         panic!("{}", e)
@@ -193,17 +199,34 @@ fn process_data_definer(file : File) -> io::Result<ProcessData> {
 
     }
 
-    println!("{} {} {} {} {} {}", pid, ppid, process_name, ram_usage, threads_used, process_state);
+    //println!("{} {} {} {} {} {}", pid, ppid, process_name, ram_usage, threads_used, process_state);
 
-    Ok(ProcessData {
-        pid,
-        ppid,
-        process_name,
-        ram_usage,
-        threads_used,
-        cpu_usage,
-        state : process_state
-    })
+    if process_name.is_none() || pid.is_none() || ppid.is_none() || cpu_usage.is_none() 
+        || ram_usage.is_none() || process_state.is_none() || threads_used.is_none() {
+            Err(io::Error::new(io::ErrorKind::NotFound, "One of the paramters couldn't be fullfiled"))
+    }
+    else {
+
+        let pid = pid.unwrap();
+        let ppid = ppid.unwrap();
+        let process_name = process_name.unwrap();
+        let ram_usage = ram_usage.unwrap();
+        let threads_used = threads_used.unwrap();
+        let cpu_usage = cpu_usage.unwrap();
+        let process_state = process_state.unwrap();
+
+        Ok(ProcessData {
+            pid,
+            ppid,
+            process_name,
+            ram_usage,
+            threads_used,
+            cpu_usage,
+            state : process_state
+        })
+    }
+
+
 }
 
 //TODO: CHECK IF PROCESS DATA DEFINER IS WORKING PROPERLY AND SHOWING DATA
