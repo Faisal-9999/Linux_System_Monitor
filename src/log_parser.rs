@@ -45,11 +45,11 @@ enum AttributeType {
     Ppid,
     Threads,
     RamUsage,
+    CpuUsage,
     NONE,
 }
 
 use AttributeType::*;
-use iced::wgpu::naga::proc;
 
 struct AttributeAndValue {
     att_type : AttributeType,
@@ -71,25 +71,30 @@ fn process_data_definer(file : File) -> io::Result<ProcessData> {
     let mut process_name: Option<String> = None;
     let mut pid : Option<u32> = None;
     let mut ppid: Option<u32> = None;
-    let mut cpu_usage : Option<u32> = None;
+    let mut cpu_usage : Option<f64> = None;
     let mut threads_used : Option<u32> = None;
-    let mut ram_usage : Option<u32> = None;
+    let mut ram_usage : Option<f64> = None;
     let mut process_state : Option<String> = None;
 
-    //All data types above will turn into Option types for now below code will be
-    //refactored to account for Option types
-    //imma kms 
 
     /*
-        DATA THAT NEEDS TO BE PARSED FROM FILES ARE STATED ABOVE 
-        SO FAR I THINK TENTATIVE I MIGHT ADD MORE LAYER ON ddeepending on
-        how I feel about it GAY
-
         CALCULATING CPU MAY BE SOMEWHAT MORE CHALLENING Will look into it later on
         might need a math equation from it pretty sure Gemini showed the equation forgot to write down
+        
+        data for cpu utilization is scattered across multiple files I think
+
+        MAJOR THINGS LEFT SO FAR:
+        TODO: DATABASE INTEGRATION
+        TODO: FRONTEND
+        TODO: CPU UTilisation
+
+        DONE:
+        LOG PARSER
     */
 
-    let attributes : [AttributeAndValue; 6] = [
+    let attributes : [AttributeAndValue; 6] = 
+    
+    [
         AttributeAndValue::new(AttributeType::Name, String::from("Name")),
         AttributeAndValue::new(AttributeType::State, String::from("State")),
         AttributeAndValue::new(AttributeType::Pid, String::from("Pid")),
@@ -97,8 +102,6 @@ fn process_data_definer(file : File) -> io::Result<ProcessData> {
         AttributeAndValue::new(AttributeType::RamUsage, String::from("VmRSS")),
         AttributeAndValue::new(AttributeType::Threads, String::from("Threads")),
     ];
-
-
 
     let reader: io::BufReader<File> = io::BufReader::new(file);
 
@@ -131,9 +134,6 @@ fn process_data_definer(file : File) -> io::Result<ProcessData> {
                 }
             }
         }
-
-        //May uncomment later on if parser fucks up
-        //println!("{} : {}", word, attribute_value); 
 
         let mut type_check: AttributeType = NONE;
 
@@ -182,7 +182,7 @@ fn process_data_definer(file : File) -> io::Result<ProcessData> {
 
                 cleaned_val = u32_cleaner(attribute_value);
                 
-                ram_usage = match cleaned_val.trim().parse::<u32>() {
+                ram_usage = match cleaned_val.trim().parse::<f64>() {
                     Ok(val) => Some(val),
                     Err(e) => {
                         println!("ram {}", cleaned_val);
@@ -190,16 +190,12 @@ fn process_data_definer(file : File) -> io::Result<ProcessData> {
                     }
                 }
             },
+            CpuUsage => {
+                //Code needs to bea dded here for
+            },
             NONE => ()
         }
-
-        //TODO: FIX THE PARSING AND ASSIGNING ERRORS IN THIS 
-
-    
-
     }
-
-    //println!("{} {} {} {} {} {}", pid, ppid, process_name, ram_usage, threads_used, process_state);
 
     if process_name.is_none() || pid.is_none() || ppid.is_none() || cpu_usage.is_none() 
         || ram_usage.is_none() || process_state.is_none() || threads_used.is_none() {
@@ -225,14 +221,7 @@ fn process_data_definer(file : File) -> io::Result<ProcessData> {
             state : process_state
         })
     }
-
-
 }
-
-//TODO: CHECK IF PROCESS DATA DEFINER IS WORKING PROPERLY AND SHOWING DATA
-//BY DISPALAYING THE SHIT IN IT USING process_list_definer
-//I guess I will do it tomorrow or some shit this kinda gay
-
 
 pub fn process_list_definer(pids : &Vec<String>) -> io::Result<Vec<ProcessData>> {
 

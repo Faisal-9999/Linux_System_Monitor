@@ -3,17 +3,9 @@ mod database_connect;
 mod process_data;
 mod log_parser;
 
-use crate::log_parser::*;
+use crate::database_connect::*;
 
 fn main() {
-    // let a = match read_folder_names() {
-    //     Ok(l) => l,
-    //     Err(e) => panic!("{}", e)    
-    // };
-
-    // let b = match process_list_definer(&a) {
-    //     Ok(l) => l,
-    //     Err(e) => panic!("{}", e)
-    // };
-
+    let mut a = PostgresConnector::default();
+    a.init_table();
 }
