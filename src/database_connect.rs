@@ -60,7 +60,7 @@ pub fn init_table(&mut self) {
         )").unwrap();
     }
 
-    pub fn display_table(&mut self) {
+    pub fn get_table_data(&mut self) {
 
     }
 }

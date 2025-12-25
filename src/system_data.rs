@@ -1,4 +1,5 @@
 //AFTER COMPLETING THIS WORK ON PER PROCESS CPU_USAGE in THE LOG PARSER FILE
+//AND THEN WORK ON GET_TABLE_DATA in database connectivity file
 
 use sysinfo::{System, Networks};
 use std::{thread, time::Duration};
