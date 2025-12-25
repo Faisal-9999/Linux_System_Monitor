@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 postgres = "0.19"
 egui = "0.33.3"
+sysinfo = "0.37.2"

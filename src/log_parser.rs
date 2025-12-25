@@ -50,6 +50,7 @@ enum AttributeType {
 }
 
 use AttributeType::*;
+use egui::debug_text::print;
 
 struct AttributeAndValue {
     att_type : AttributeType,
@@ -71,34 +72,17 @@ fn process_data_definer(file : File) -> io::Result<ProcessData> {
     let mut process_name: Option<String> = None;
     let mut pid : Option<u32> = None;
     let mut ppid: Option<u32> = None;
-    let mut cpu_usage : Option<f64> = None;
+    let mut cpu_usage : Option<f64> = Some(0.0); 
     let mut threads_used : Option<u32> = None;
     let mut ram_usage : Option<f64> = None;
     let mut process_state : Option<String> = None;
 
-
-    /*
-        CALCULATING CPU MAY BE SOMEWHAT MORE CHALLENING Will look into it later on
-        might need a math equation from it pretty sure Gemini showed the equation forgot to write down
-        
-        data for cpu utilization is scattered across multiple files I think
-
-        MAJOR THINGS LEFT SO FAR:
-        TODO: DATABASE INTEGRATION
-        TODO: FRONTEND
-        TODO: CPU UTilisation
-
-        DONE:
-        LOG PARSER
-    */
-
     let attributes : [AttributeAndValue; 6] = 
-    
     [
         AttributeAndValue::new(AttributeType::Name, String::from("Name")),
         AttributeAndValue::new(AttributeType::State, String::from("State")),
         AttributeAndValue::new(AttributeType::Pid, String::from("Pid")),
-        AttributeAndValue::new(AttributeType::Ppid, String::from("Ppid")),
+        AttributeAndValue::new(AttributeType::Ppid, String::from("PPid")),
         AttributeAndValue::new(AttributeType::RamUsage, String::from("VmRSS")),
         AttributeAndValue::new(AttributeType::Threads, String::from("Threads")),
     ];
@@ -107,14 +91,9 @@ fn process_data_definer(file : File) -> io::Result<ProcessData> {
 
     for line in reader.lines() {
         let line = line?;
-
         let mut word : String = String::new();
-
         let mut attribute_value = String::new();
-
         let mut word_ended = false;
-
-        let mut cleaned_val = String::new();
 
         for c in line.chars() {
             if c == ':' {
@@ -123,10 +102,14 @@ fn process_data_definer(file : File) -> io::Result<ProcessData> {
             }
 
             if !word_ended {
-                word.push(c);
+
+                if c != '\t' {
+                    word.push(c);
+                }
             }
             else {
-                if c == ' ' {
+
+                if c == ' ' || c == '\t' {
                     continue;
                 }
                 else {
@@ -147,78 +130,40 @@ fn process_data_definer(file : File) -> io::Result<ProcessData> {
         match type_check {
             Name => process_name = Some(String::from(attribute_value.trim())),
             State => process_state = Some(String::from(attribute_value.trim())), 
-            Pid => pid = match attribute_value.trim().parse::<u32>() {
-                Ok(val) => Some(val),
-                Err(e) => {
-                    println!("pid {}", attribute_value);
-                    panic!("{}", e)
-                }
-            },
+            Pid => pid = attribute_value.trim().parse::<u32>().ok(),
             Ppid => {
-
-                cleaned_val = u32_cleaner(attribute_value);
-            
-                ppid = match cleaned_val.trim().parse::<u32>() {
-                    Ok(val) => Some(val),
-                    Err(e) => {
-                        println!("ppid {}", cleaned_val);
-                        panic!("{}", e)
-                    }
-                }
+                let cleaned_val = u32_cleaner(attribute_value);
+                ppid = cleaned_val.parse::<u32>().ok();
             },
             Threads =>  {
-
-                cleaned_val = u32_cleaner(attribute_value);
-
-                threads_used = match cleaned_val.trim().parse::<u32>() {
-                    Ok(val) => Some(val),
-                    Err(e) => {
-                    println!("threads {}", cleaned_val);
-                    panic!("{}", e)
-                    }
-                }
+                let cleaned_val = u32_cleaner(attribute_value);
+                threads_used = cleaned_val.parse::<u32>().ok();
             },
             RamUsage => {
-
-                cleaned_val = u32_cleaner(attribute_value);
-                
-                ram_usage = match cleaned_val.trim().parse::<f64>() {
-                    Ok(val) => Some(val),
-                    Err(e) => {
-                        println!("ram {}", cleaned_val);
-                        panic!("{}", e)
-                    }
-                }
+                let cleaned_val = u32_cleaner(attribute_value);
+                ram_usage = cleaned_val.parse::<f64>().ok();
             },
-            CpuUsage => {
-                //Code needs to bea dded here for
-            },
-            NONE => ()
+            _ => ()
         }
+    }
+
+    if ram_usage.is_none() {
+        ram_usage = Some(0.0);
     }
 
     if process_name.is_none() || pid.is_none() || ppid.is_none() || cpu_usage.is_none() 
         || ram_usage.is_none() || process_state.is_none() || threads_used.is_none() {
-            Err(io::Error::new(io::ErrorKind::NotFound, "One of the paramters couldn't be fullfiled"))
+            Err(io::Error::new(io::ErrorKind::NotFound, "Missing required field"))
     }
     else {
-
-        let pid = pid.unwrap();
-        let ppid = ppid.unwrap();
-        let process_name = process_name.unwrap();
-        let ram_usage = ram_usage.unwrap();
-        let threads_used = threads_used.unwrap();
-        let cpu_usage = cpu_usage.unwrap();
-        let process_state = process_state.unwrap();
-
         Ok(ProcessData {
-            pid,
-            ppid,
-            process_name,
-            ram_usage,
-            threads_used,
-            cpu_usage,
-            state : process_state
+            pid: pid.unwrap(),
+            ppid: ppid.unwrap(),
+            process_name: process_name.unwrap(),
+            ram_usage: ram_usage.unwrap(),
+            threads_used: threads_used.unwrap(),
+            cpu_usage: cpu_usage.unwrap(),
+            state : process_state.unwrap()
         })
     }
 }
@@ -232,10 +177,15 @@ pub fn process_list_definer(pids : &Vec<String>) -> io::Result<Vec<ProcessData>>
         let file = File::open(format!{"/proc/{}/status", pid})?;
 
         process_table.push(match process_data_definer(file) {
-            Ok(data) => data,
-            Err(_) => continue,
+            Ok(data) => {
+                println!("{}", data.pid);
+                data
+            },
+            Err(e) => panic!("{}", e)
         });
     }
+
+    println!("\nLENGTH : {}", process_table.len());
 
     Ok(process_table)
 }
