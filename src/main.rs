@@ -12,21 +12,21 @@ use crate::{database_connect::*, log_parser::{process_list_definer, read_folder_
 fn main() {
 
 
-    // let mut a = PostgresConnector::default();
-    // a.init_table();
+    let mut a = PostgresConnector::default();
+    a.init_table();
 
-    // let folders = match read_folder_names() {
-    //     Ok(val) => val,
-    //     Err(e) => panic!("{}", e)
-    // };
+    let folders = match read_folder_names() {
+        Ok(val) => val,
+        Err(e) => panic!("{}", e)
+    };
 
-    // let b = process_list_definer(&folders);
+    let b = process_list_definer(&folders);
 
-    // let b = match b {
-    //     Ok(e) => e,
-    //     Err(e) => panic!("{}", e)
-    // };
+    let b = match b {
+        Ok(e) => e,
+        Err(e) => panic!("{}", e)
+    };
 
 
-    // a.save_data(b);
+    a.save_data(b);
 }

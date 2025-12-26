@@ -1,6 +1,8 @@
-use std::{fs, io, path::Path, path::PathBuf};
+use std::{fs, io};
 use std::fs::File;
 use std::io::BufRead;
+use std::{thread, time::Duration};
+use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, Pid, MINIMUM_CPU_UPDATE_INTERVAL};
 use crate::process_data::*;
 
 const Location : &str = "/proc/";
@@ -50,8 +52,6 @@ enum AttributeType {
 }
 
 use AttributeType::*;
-use egui::debug_text::print;
-
 struct AttributeAndValue {
     att_type : AttributeType,
     att_name : String,
@@ -63,8 +63,33 @@ impl AttributeAndValue {
     }
 }
 
-fn cpu_usage_calculator(pid : u32) -> u32 {
-    0
+
+//NEED TO WORK ON THIS AND MAKE IT FASTER
+fn cpu_usage_calculator(pid : u32) -> Option<f64> {
+    let mut sys = System::new();
+    let pid = Pid::from_u32(pid);
+
+    let cpu = ProcessRefreshKind::nothing().with_cpu();
+
+
+
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+         true,
+         cpu
+    );
+
+    thread::sleep(Duration::from_secs(1));
+
+
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+         true,
+         cpu
+    );
+
+    sys.process(pid).map(|c| ((c.cpu_usage() / 800.0) * 100.0) as f64)
+
 }
 
 fn process_data_definer(file : File) -> io::Result<ProcessData> {
@@ -156,6 +181,11 @@ fn process_data_definer(file : File) -> io::Result<ProcessData> {
             Err(io::Error::new(io::ErrorKind::NotFound, "Missing required field"))
     }
     else {
+
+        cpu_usage = Some(cpu_usage_calculator(pid.unwrap()).unwrap());
+
+        println!("{}", cpu_usage.unwrap());
+
         Ok(ProcessData {
             pid: pid.unwrap(),
             ppid: ppid.unwrap(),
