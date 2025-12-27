@@ -1,18 +1,16 @@
-use std::os::unix::process;
 use std::{fs, io};
 use std::fs::File;
 use std::io::BufRead;
 use std::collections::HashMap;
-use std::{thread, time::Duration};
-use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, Pid, MINIMUM_CPU_UPDATE_INTERVAL};
+use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
 use crate::process_data::*;
 
-const Location : &str = "/proc/";
+const LOCATION : &str = "/proc/";
 
 
 pub fn read_folder_names() -> Result<Vec<String>, std::io::Error> {
 
-    let entries = fs::read_dir(Location)?;
+    let entries = fs::read_dir(LOCATION)?;
 
     let mut folder_names : Vec<String> = Vec::new();
 
@@ -49,7 +47,6 @@ enum AttributeType {
     Ppid,
     Threads,
     RamUsage,
-    CpuUsage,
     NONE,
 }
 
@@ -67,32 +64,25 @@ impl AttributeAndValue {
 
 
 //NEED TO WORK ON THIS AND MAKE IT FASTER
-fn cpu_usage_calculator() -> HashMap<u32, f64> {
-    let mut sys = System::new();
+
+//I think its faster now not sure
+//Gemini solution was 400 times slower due to calculating each pid cpu_usage at once
+//Reduced O(N) time complexity to O(1) by calculating process cpu_usage at once and waiting a second
+//outside the function by putting the main thread to sleep
+
+fn cpu_usage_calculator(sys : &mut System) -> HashMap<u32, f64> {
+
+    sys.refresh_cpu_usage();
 
     let cpu = ProcessRefreshKind::nothing().with_cpu();
 
-
-    sys.refresh_cpu_all();
-
-    let core_count = sys.cpus().len() as f32;
-
-    if core_count == 0.0 {
-        return HashMap::new();
-    }
-
     sys.refresh_processes_specifics(ProcessesToUpdate::All, true, cpu);
-
-    thread::sleep(Duration::from_secs(1));
-
-    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, cpu);
-
 
     sys.processes()
         .iter()
         .filter(|(_, p) | p.cpu_usage() > 0.0)
         .map(|(pid, process)|
-            (pid.as_u32(), (process.cpu_usage() / core_count) as f64)
+            (pid.as_u32(), process.cpu_usage() as f64)
         )
         .collect()
 }
@@ -199,26 +189,30 @@ fn process_data_definer(file : File) -> io::Result<ProcessData> {
     }
 }
 
-pub fn process_list_definer(pids : &Vec<String>) -> io::Result<Vec<ProcessData>> {
+pub fn process_list_definer(pids : &Vec<String>, sys : &mut System) -> io::Result<Vec<ProcessData>> {
 
     let mut process_table : Vec<ProcessData> = Vec::new();
 
     for pid in pids {
 
-        let file = File::open(format!{"/proc/{}/status", pid})?;
+        let file: File = File::open(format!{"/proc/{}/status", pid})?;
 
         process_table.push(match process_data_definer(file) {
-            Ok(data) => {
-                println!("{}", data.pid);
-                data
-            },
-            Err(e) => panic!("{}", e)
+            Ok(data) => data,
+            Err(_) => continue,
         });
     }
 
-    let cpu_usage = cpu_usage_calculator();
+    let cpu_usage: HashMap<u32, f64> = cpu_usage_calculator(sys);
 
-    println!("\nLENGTH : {}", process_table.len());
+
+    for process in &mut process_table {
+
+        process.cpu_usage = match cpu_usage.get_key_value(&process.pid) {
+            Some((_, b)) => *b,
+            None => 0.0,
+        };
+    }
 
     Ok(process_table)
 }
