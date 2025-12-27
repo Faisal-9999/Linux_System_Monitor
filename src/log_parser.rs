@@ -1,6 +1,8 @@
+use std::os::unix::process;
 use std::{fs, io};
 use std::fs::File;
 use std::io::BufRead;
+use std::collections::HashMap;
 use std::{thread, time::Duration};
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, Pid, MINIMUM_CPU_UPDATE_INTERVAL};
 use crate::process_data::*;
@@ -65,39 +67,41 @@ impl AttributeAndValue {
 
 
 //NEED TO WORK ON THIS AND MAKE IT FASTER
-fn cpu_usage_calculator(pid : u32) -> Option<f64> {
+fn cpu_usage_calculator() -> HashMap<u32, f64> {
     let mut sys = System::new();
-    let pid = Pid::from_u32(pid);
 
     let cpu = ProcessRefreshKind::nothing().with_cpu();
 
 
+    sys.refresh_cpu_all();
 
-    sys.refresh_processes_specifics(
-        ProcessesToUpdate::Some(&[pid]),
-         true,
-         cpu
-    );
+    let core_count = sys.cpus().len() as f32;
+
+    if core_count == 0.0 {
+        return HashMap::new();
+    }
+
+    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, cpu);
 
     thread::sleep(Duration::from_secs(1));
 
+    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, cpu);
 
-    sys.refresh_processes_specifics(
-        ProcessesToUpdate::Some(&[pid]),
-         true,
-         cpu
-    );
 
-    sys.process(pid).map(|c| ((c.cpu_usage() / 800.0) * 100.0) as f64)
-
+    sys.processes()
+        .iter()
+        .filter(|(_, p) | p.cpu_usage() > 0.0)
+        .map(|(pid, process)|
+            (pid.as_u32(), (process.cpu_usage() / core_count) as f64)
+        )
+        .collect()
 }
 
 fn process_data_definer(file : File) -> io::Result<ProcessData> {
 
     let mut process_name: Option<String> = None;
     let mut pid : Option<u32> = None;
-    let mut ppid: Option<u32> = None;
-    let mut cpu_usage : Option<f64> = Some(0.0); 
+    let mut ppid: Option<u32> = None; 
     let mut threads_used : Option<u32> = None;
     let mut ram_usage : Option<f64> = None;
     let mut process_state : Option<String> = None;
@@ -176,15 +180,12 @@ fn process_data_definer(file : File) -> io::Result<ProcessData> {
         ram_usage = Some(0.0);
     }
 
-    if process_name.is_none() || pid.is_none() || ppid.is_none() || cpu_usage.is_none() 
+    if process_name.is_none() || pid.is_none() || ppid.is_none()
         || ram_usage.is_none() || process_state.is_none() || threads_used.is_none() {
             Err(io::Error::new(io::ErrorKind::NotFound, "Missing required field"))
     }
     else {
 
-        cpu_usage = Some(cpu_usage_calculator(pid.unwrap()).unwrap());
-
-        println!("{}", cpu_usage.unwrap());
 
         Ok(ProcessData {
             pid: pid.unwrap(),
@@ -192,7 +193,7 @@ fn process_data_definer(file : File) -> io::Result<ProcessData> {
             process_name: process_name.unwrap(),
             ram_usage: ram_usage.unwrap(),
             threads_used: threads_used.unwrap(),
-            cpu_usage: cpu_usage.unwrap(),
+            cpu_usage : 0.0,
             state : process_state.unwrap()
         })
     }
@@ -214,6 +215,8 @@ pub fn process_list_definer(pids : &Vec<String>) -> io::Result<Vec<ProcessData>>
             Err(e) => panic!("{}", e)
         });
     }
+
+    let cpu_usage = cpu_usage_calculator();
 
     println!("\nLENGTH : {}", process_table.len());
 
