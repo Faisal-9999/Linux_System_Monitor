@@ -1,1 +1,9 @@
-//CODE WILL BE WRITTEN LATER ON
+struct TaskHandler;
+
+
+
+impl TaskHandler {
+    pub fn kill() {
+        
+    }
+}

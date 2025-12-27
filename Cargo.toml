@@ -7,3 +7,10 @@ edition = "2024"
 postgres = "0.19"
 egui = "0.33.3"
 sysinfo = "0.37.2"
+eframe = { version = "0.33.3", default-features = true, features = [
+    "accesskit",     # For screen readers and accessibility
+    "default_fonts", # Essential unless you want to bundle your own .ttf
+    "wgpu",          # The modern graphics backend (replaces the older 'glow')
+    "wayland",       # Necessary for modern Linux support
+    "x11",           # For older Linux support
+] }

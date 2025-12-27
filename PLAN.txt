@@ -1,10 +1,10 @@
-TWO MENUS
+Front end will contain
 
-ONE CONTAINS TOTAL SYSTEM-WIDE RAM, CPU, NETWORK and READ/WRITE ON DISk
+Graph at the top showing per core cpu usage // 28th December
 
-The other will contain per process CPU, RAM, NETWORK, READ/WRITE USAGE
+then 4 circle things showing network up and down, read and write, overall cpu
+and overall ram used //29th December
 
-DB WILL Create a separate table for each session containing the average usage of these stats for 
-each process
+at the bottom will be the DBMS accessed
+data showing per process resource usage //30th December
 
-Further plans will be decided later ON
