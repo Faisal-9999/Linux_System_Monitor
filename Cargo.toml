@@ -5,9 +5,10 @@ edition = "2024"
 
 [dependencies]
 postgres = "0.19"
-egui = "0.33.3"
+egui = "0.32.3"
+egui_plot = "0.33.0"
 sysinfo = "0.37.2"
-eframe = { version = "0.33.3", default-features = true, features = [
+eframe = { version = "0.32.3", default-features = true, features = [
     "accesskit",     # For screen readers and accessibility
     "default_fonts", # Essential unless you want to bundle your own .ttf
     "wgpu",          # The modern graphics backend (replaces the older 'glow')

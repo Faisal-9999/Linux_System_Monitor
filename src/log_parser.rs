@@ -70,7 +70,7 @@ impl AttributeAndValue {
 //Reduced O(N) time complexity to O(1) by calculating process cpu_usage at once and waiting a second
 //outside the function by putting the main thread to sleep
 
-fn cpu_usage_calculator(sys : &mut System) -> HashMap<u32, f64> {
+pub fn cpu_usage_calculator(sys : &mut System) -> HashMap<u32, f64> {
 
     sys.refresh_cpu_usage();
 
@@ -87,7 +87,7 @@ fn cpu_usage_calculator(sys : &mut System) -> HashMap<u32, f64> {
         .collect()
 }
 
-fn process_data_definer(file : File) -> io::Result<ProcessData> {
+pub fn process_data_definer(file : File) -> io::Result<ProcessData> {
 
     let mut process_name: Option<String> = None;
     let mut pid : Option<u32> = None;

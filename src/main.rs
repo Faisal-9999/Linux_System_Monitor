@@ -4,7 +4,6 @@ mod process_data;
 mod log_parser;
 mod system_data;
 mod task_handler;
-mod PerCoreGraph;
 
 use core::panic;
 

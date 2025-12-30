@@ -1,6 +1,6 @@
 use crate::process_data::ProcessData;
 
-use postgres::{Client, Error, NoTls};
+use postgres::{Client, NoTls};
 
 pub struct PostgresConnector {
     client : Client,
@@ -60,7 +60,27 @@ pub fn init_table(&mut self) {
         )").unwrap();
     }
 
-    pub fn get_table_data(&mut self) {
+    pub fn get_table_data(&mut self) -> Result<Vec<ProcessData>, postgres::Error> {
+        let rows = self.client.query(
+            "SELECT pid, ppid, name, cpu_usage, ram_usage, state, threads FROM Process_Table",
+            &[]
+        )?;
 
+        let mut process_list = Vec::new();
+
+        for row in rows {
+            let process = ProcessData {
+                pid: row.get::<_, i32>(0) as u32,
+                ppid: row.get::<_, i32>(1) as u32,
+                process_name: row.get(2),
+                cpu_usage: row.get(3),
+                ram_usage: row.get(4),
+                state: row.get(5),
+                threads_used: row.get::<_, i32>(6) as u32,
+            };
+            process_list.push(process);
+        }
+
+        Ok(process_list)
     }
 }
