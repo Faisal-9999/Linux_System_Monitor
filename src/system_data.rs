@@ -1,8 +1,5 @@
-//AFTER COMPLETING THIS WORK ON PER PROCESS CPU_USAGE in THE LOG PARSER FILE
-//AND THEN WORK ON GET_TABLE_DATA in database connectivity file
-
 use sysinfo::{System, Networks, Disks};
-use std::{iter, thread, time::Duration};
+use std::{iter, thread, time::Duration, sync::mpsc::{self, Receiver}};
 
 pub struct SystemData {
     pub hardware : System,
@@ -10,13 +7,13 @@ pub struct SystemData {
     pub disks : Disks
 }
 
-struct Snapshot {
-    overall_cpu_used : f32,
-    overall_ram_used : u64,
-    overall_net_down_kb : f64,
-    overall_net_up_kb : f64,
-    overall_disk_read_mb : f64,
-    overall_disk_write_mb : f64,
+pub struct Snapshot {
+    pub overall_cpu_used : f32,
+    pub overall_ram_used : u64,
+    pub overall_net_down_kb : f64,
+    pub overall_net_up_kb : f64,
+    pub overall_disk_read_mb : f64,
+    pub overall_disk_write_mb : f64,
 }
 
 impl SystemData {
@@ -31,7 +28,15 @@ impl SystemData {
     fn system_usage_stream(&mut self) -> impl Iterator<Item = Snapshot> {
         self.hardware.refresh_all();
         self.network.refresh(false);
+        self.disks.refresh(false);
 
+        let mut prev_disk_read_bytes: u64 = 0;
+        let mut prev_disk_write_bytes: u64 = 0;
+        
+        for disk in self.disks.list() {
+            prev_disk_read_bytes += disk.usage().read_bytes;
+            prev_disk_write_bytes += disk.usage().written_bytes;
+        }
 
         iter::from_fn(move || {
             thread::sleep(Duration::from_secs(1));
@@ -41,13 +46,19 @@ impl SystemData {
             self.network.refresh(false);
             self.disks.refresh(false);
 
-            let mut total_read_mb = 0.0;
-            let mut total_write_mb = 0.0;
+            let mut current_disk_read_bytes: u64 = 0;
+            let mut current_disk_write_bytes: u64 = 0;
 
             for disk in self.disks.list() {
-                total_read_mb += disk.usage().read_bytes as f64 / 1024.0 / 1024.0;
-                total_write_mb += disk.usage().written_bytes as f64 / 1024.0 / 1024.0;
+                current_disk_read_bytes += disk.usage().read_bytes;
+                current_disk_write_bytes += disk.usage().written_bytes;
             }
+
+            let disk_read_speed_mb = ((current_disk_read_bytes as f64 - prev_disk_read_bytes as f64) / 1024.0 / 1024.0).max(0.0);
+            let disk_write_speed_mb = ((current_disk_write_bytes as f64 - prev_disk_write_bytes as f64) / 1024.0 / 1024.0).max(0.0);
+
+            prev_disk_read_bytes = current_disk_read_bytes;
+            prev_disk_write_bytes = current_disk_write_bytes;
 
             let mut down_speed = 0.0;
             let mut up_speed = 0.0;
@@ -62,9 +73,26 @@ impl SystemData {
                 overall_ram_used : self.hardware.used_memory() / 1024 / 1024,
                 overall_net_down_kb : down_speed,
                 overall_net_up_kb : up_speed,
-                overall_disk_read_mb : total_read_mb,
-                overall_disk_write_mb : total_write_mb
+                overall_disk_read_mb : disk_read_speed_mb,
+                overall_disk_write_mb : disk_write_speed_mb
             })
         })
+    }
+
+    pub fn start_snapshot_thread() -> Receiver<Snapshot> {
+        let (tx, rx) = mpsc::channel();
+
+        thread::spawn(move || {
+            let mut sd = SystemData::initialize();
+            let stream = sd.system_usage_stream();
+
+            for snap in stream {
+                if tx.send(snap).is_err() {
+                    break;
+                }
+            }
+        });
+
+        rx
     }
 }

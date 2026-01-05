@@ -2,9 +2,10 @@ use eframe::egui;
 use crate::process_data::ProcessData;
 use crate::database_connect::PostgresConnector;
 use crate::log_parser;
-use crate::system_data::SystemData;
+use crate::system_data::{SystemData, Snapshot};
 use std::time::Duration;
 use std::collections::HashMap;
+use std::sync::mpsc::Receiver;
 
 pub struct LinuxApp {
     system_data: SystemData,
@@ -25,8 +26,10 @@ pub struct LinuxApp {
     last_net_down: f64,
     last_net_up: f64,
     cpu_process_usage: HashMap<u32, f64>,
-    
-    // Database update throttling (update every 3 seconds instead of every frame)
+    snapshot_rx: Receiver<Snapshot>,
+
+    prev_disk_read_bytes: u64,
+    prev_disk_write_bytes: u64,
     frame_counter: u32,
 }
 
@@ -38,12 +41,20 @@ impl Default for LinuxApp {
         let system_data = SystemData::initialize();
         let num_cpus = system_data.hardware.cpus().len();
 
+        let snapshot_rx = SystemData::start_snapshot_thread();
+
+        let mut prev_disk_read_bytes: u64 = 0;
+        let mut prev_disk_write_bytes: u64 = 0;
+        for disk in system_data.disks.list() {
+            prev_disk_read_bytes += disk.usage().read_bytes;
+            prev_disk_write_bytes += disk.usage().written_bytes;
+        }
+
         Self { 
             system_data,
             db_connector: Some(db),
             process_data: Vec::new(),
             
-            // Initialize per-core history with empty vecs for each core
             cpu_per_core_history: vec![Vec::with_capacity(60); num_cpus],
             
             ram_history: Vec::with_capacity(60),
@@ -57,6 +68,9 @@ impl Default for LinuxApp {
             last_net_down: 0.0,
             last_net_up: 0.0,
             cpu_process_usage: HashMap::new(),
+            snapshot_rx,
+            prev_disk_read_bytes,
+            prev_disk_write_bytes,
             frame_counter: 0,
         }
     }
@@ -78,19 +92,12 @@ impl LinuxApp {
     }
 
     fn update_system_metrics(&mut self) {
-        // Increment frame counter
         self.frame_counter += 1;
         
-        // Refresh all system metrics using sysinfo (fast, no I/O)
         self.system_data.hardware.refresh_cpu_all();
-        self.system_data.hardware.refresh_memory();
-        self.system_data.network.refresh(false);
-        self.system_data.disks.refresh(false);
 
-        // Get CPU usage per process using log_parser's cpu_usage_calculator
         self.cpu_process_usage = log_parser::cpu_usage_calculator(&mut self.system_data.hardware);
 
-        // Store per-core CPU history (keep last 60 samples)
         for (core_idx, cpu) in self.system_data.hardware.cpus().iter().enumerate() {
             if core_idx < self.cpu_per_core_history.len() {
                 self.cpu_per_core_history[core_idx].push(cpu.cpu_usage() as f64);
@@ -100,49 +107,82 @@ impl LinuxApp {
             }
         }
 
-        // Store RAM history (keep last 60 samples) - in GB
-        let ram_gb = self.system_data.hardware.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
-        self.ram_history.push(ram_gb);
-        if self.ram_history.len() > 60 {
-            self.ram_history.remove(0);
+        let mut latest_snapshot: Option<Snapshot> = None;
+        while let Ok(snap) = self.snapshot_rx.try_recv() {
+            latest_snapshot = Some(snap);
         }
 
-        // Store Network history (keep last 60 samples)
-        let mut down_speed = 0.0;
-        let mut up_speed = 0.0;
-        for (_name, data) in self.system_data.network.iter() {
-            down_speed += data.received() as f64 / 1024.0;
-            up_speed += data.transmitted() as f64 / 1024.0;
-        }
-        self.last_net_down = down_speed;
-        self.last_net_up = up_speed;
-        self.net_down_history.push(down_speed);
-        self.net_up_history.push(up_speed);
-        if self.net_down_history.len() > 60 {
-            self.net_down_history.remove(0);
-            self.net_up_history.remove(0);
+        if let Some(snap) = latest_snapshot {
+            let ram_gb = snap.overall_ram_used as f64 / 1024.0;
+            self.ram_history.push(ram_gb);
+            if self.ram_history.len() > 60 {
+                self.ram_history.remove(0);
+            }
+
+            self.last_net_down = snap.overall_net_down_kb;
+            self.last_net_up = snap.overall_net_up_kb;
+            self.net_down_history.push(self.last_net_down);
+            self.net_up_history.push(self.last_net_up);
+            if self.net_down_history.len() > 60 {
+                self.net_down_history.remove(0);
+                self.net_up_history.remove(0);
+            }
+
+            self.last_disk_read = snap.overall_disk_read_mb;
+            self.last_disk_write = snap.overall_disk_write_mb;
+            self.disk_read_history.push(self.last_disk_read);
+            self.disk_write_history.push(self.last_disk_write);
+            if self.disk_read_history.len() > 60 {
+                self.disk_read_history.remove(0);
+                self.disk_write_history.remove(0);
+            }
+        } else {
+            self.system_data.hardware.refresh_memory();
+            let ram_gb = self.system_data.hardware.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
+            self.ram_history.push(ram_gb);
+            if self.ram_history.len() > 60 {
+                self.ram_history.remove(0);
+            }
+
+            let mut down_speed = 0.0;
+            let mut up_speed = 0.0;
+            for (_name, data) in self.system_data.network.iter() {
+                down_speed += data.received() as f64 / 1024.0;
+                up_speed += data.transmitted() as f64 / 1024.0;
+            }
+            self.last_net_down = down_speed;
+            self.last_net_up = up_speed;
+            self.net_down_history.push(down_speed);
+            self.net_up_history.push(up_speed);
+            if self.net_down_history.len() > 60 {
+                self.net_down_history.remove(0);
+                self.net_up_history.remove(0);
+            }
+
+            let mut total_read_bytes = 0u64;
+            let mut total_write_bytes = 0u64;
+            for disk in self.system_data.disks.list() {
+                total_read_bytes += disk.usage().read_bytes;
+                total_write_bytes += disk.usage().written_bytes;
+            }
+            
+            let disk_read_speed_mb = ((total_read_bytes as f64 - self.prev_disk_read_bytes as f64) / 1024.0 / 1024.0).max(0.0);
+            let disk_write_speed_mb = ((total_write_bytes as f64 - self.prev_disk_write_bytes as f64) / 1024.0 / 1024.0).max(0.0);
+            
+            self.prev_disk_read_bytes = total_read_bytes;
+            self.prev_disk_write_bytes = total_write_bytes;
+            
+            self.last_disk_read = disk_read_speed_mb;
+            self.last_disk_write = disk_write_speed_mb;
+            self.disk_read_history.push(disk_read_speed_mb);
+            self.disk_write_history.push(disk_write_speed_mb);
+            if self.disk_read_history.len() > 60 {
+                self.disk_read_history.remove(0);
+                self.disk_write_history.remove(0);
+            }
         }
 
-        // Calculate disk speeds
-        let mut total_read_mb = 0.0;
-        let mut total_write_mb = 0.0;
-        for disk in self.system_data.disks.list() {
-            total_read_mb += disk.usage().read_bytes as f64 / 1024.0 / 1024.0;
-            total_write_mb += disk.usage().written_bytes as f64 / 1024.0 / 1024.0;
-        }
-        self.last_disk_read = total_read_mb;
-        self.last_disk_write = total_write_mb;
-        self.disk_read_history.push(total_read_mb);
-        self.disk_write_history.push(total_write_mb);
-        if self.disk_read_history.len() > 60 {
-            self.disk_read_history.remove(0);
-            self.disk_write_history.remove(0);
-        }
-
-        // ===== DATABASE OPERATIONS ONLY EVERY 3 FRAMES (every ~3 seconds) =====
-        // This prevents database I/O from blocking the UI every frame
         if self.frame_counter % 3 == 0 {
-            // Collect process data from /proc using log_parser
             if let Ok(pids) = log_parser::read_folder_names() {
                 let mut collected_data = Vec::new();
                 for pid_str in pids {
@@ -150,7 +190,6 @@ impl LinuxApp {
                         let path = format!("/proc/{}/status", pid_str);
                         if let Ok(file) = std::fs::File::open(&path) {
                             if let Ok(process_data) = log_parser::process_data_definer(file) {
-                                // Merge CPU usage from our calculated map
                                 let mut process = process_data;
                                 if let Some(&cpu_val) = self.cpu_process_usage.get(&pid) {
                                     process.cpu_usage = cpu_val;
@@ -161,13 +200,11 @@ impl LinuxApp {
                     }
                 }
 
-                // Save to database
                 if let Some(ref mut connector) = self.db_connector {
                     let _ = connector.save_data(collected_data);
                 }
             }
 
-            // Fetch process data from database
             if let Some(ref mut connector) = self.db_connector {
                 match connector.get_table_data() {
                     Ok(data) => self.process_data = data,
@@ -182,7 +219,6 @@ impl eframe::App for LinuxApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.update_system_metrics();
 
-        // Create a scrollable area that contains everything
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical()
                 .auto_shrink([false; 2])
@@ -190,7 +226,6 @@ impl eframe::App for LinuxApp {
                     ui.heading("🐧 Linux System Monitor");
                     ui.separator();
 
-                    // ===== PER-CORE CPU GRAPH SECTION AT TOP =====
                     self.draw_per_core_graph(ui);
 
                     ui.separator();
@@ -207,7 +242,7 @@ impl eframe::App for LinuxApp {
         });
 
         // Request repaint at regular intervals (every 1 second)
-        ctx.request_repaint_after(Duration::from_secs(1));
+        ctx.request_repaint_after(Duration::from_millis(200));
     }
 }
 

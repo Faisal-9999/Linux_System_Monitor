@@ -51,6 +51,7 @@ enum AttributeType {
 }
 
 use AttributeType::*;
+
 struct AttributeAndValue {
     att_type : AttributeType,
     att_name : String,
