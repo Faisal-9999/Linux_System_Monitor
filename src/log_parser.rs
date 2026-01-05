@@ -189,34 +189,6 @@ pub fn process_data_definer(file : File) -> io::Result<ProcessData> {
     }
 }
 
-pub fn process_list_definer(pids : &Vec<String>, sys : &mut System) -> io::Result<Vec<ProcessData>> {
-
-    let mut process_table : Vec<ProcessData> = Vec::new();
-
-    for pid in pids {
-
-        let file: File = File::open(format!{"/proc/{}/status", pid})?;
-
-        process_table.push(match process_data_definer(file) {
-            Ok(data) => data,
-            Err(_) => continue,
-        });
-    }
-
-    let cpu_usage: HashMap<u32, f64> = cpu_usage_calculator(sys);
-
-
-    for process in &mut process_table {
-
-        process.cpu_usage = match cpu_usage.get_key_value(&process.pid) {
-            Some((_, b)) => *b,
-            None => 0.0,
-        };
-    }
-
-    Ok(process_table)
-}
-
 fn u32_cleaner(var : String) -> String {
     let mut cleaned_val = String::new();
 

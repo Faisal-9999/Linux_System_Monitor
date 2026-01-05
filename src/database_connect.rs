@@ -9,7 +9,7 @@ pub struct PostgresConnector {
 impl Default for PostgresConnector {
     fn default() -> Self {
         PostgresConnector {
-            client :  Client::connect("host=localhost user=postgres password=Fajita2231 dbname=db_project",
+            client :  Client::connect("host=localhost user=faisal password=Fajita2231 dbname=db_project",
              NoTls).unwrap(),
         }
     }

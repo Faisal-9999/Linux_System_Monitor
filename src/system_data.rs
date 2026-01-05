@@ -4,10 +4,10 @@
 use sysinfo::{System, Networks, Disks};
 use std::{iter, thread, time::Duration};
 
-struct SystemData {
-    hardware : System,
-    network : Networks,
-    disks : Disks
+pub struct SystemData {
+    pub hardware : System,
+    pub network : Networks,
+    pub disks : Disks
 }
 
 struct Snapshot {
@@ -20,7 +20,7 @@ struct Snapshot {
 }
 
 impl SystemData {
-    fn initialize() -> Self {
+    pub fn initialize() -> Self {
         Self {
             hardware : System::new_all(),
             network : Networks::new_with_refreshed_list(),

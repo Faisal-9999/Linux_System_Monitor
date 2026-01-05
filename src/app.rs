@@ -2,33 +2,32 @@ use eframe::egui;
 use crate::process_data::ProcessData;
 use crate::database_connect::PostgresConnector;
 use crate::log_parser;
-use sysinfo::{System, Networks, Disks};
+use crate::system_data::SystemData;
 use std::time::Duration;
 use std::collections::HashMap;
 
 pub struct LinuxApp {
-    system: System,
-    networks: Networks,
-    disks: Disks,
+    system_data: SystemData,
     db_connector: Option<PostgresConnector>,
     process_data: Vec<ProcessData>,
-    
-    // Per-core CPU history (Vec<Vec<f64>> where inner vec is history for each core)
+
+
     cpu_per_core_history: Vec<Vec<f64>>,
     
-    // Overall stats history
     ram_history: Vec<f64>,
     net_down_history: Vec<f64>,
     net_up_history: Vec<f64>,
     disk_read_history: Vec<f64>,
     disk_write_history: Vec<f64>,
     
-    // Last values for display
     last_disk_read: f64,
     last_disk_write: f64,
     last_net_down: f64,
     last_net_up: f64,
     cpu_process_usage: HashMap<u32, f64>,
+    
+    // Database update throttling (update every 3 seconds instead of every frame)
+    frame_counter: u32,
 }
 
 impl Default for LinuxApp {
@@ -36,13 +35,11 @@ impl Default for LinuxApp {
         let mut db = PostgresConnector::default();
         db.init_table();
         
-        let system = System::new_all();
-        let num_cpus = system.cpus().len();
-        
+        let system_data = SystemData::initialize();
+        let num_cpus = system_data.hardware.cpus().len();
+
         Self { 
-            system,
-            networks: Networks::new_with_refreshed_list(),
-            disks: Disks::new_with_refreshed_list(),
+            system_data,
             db_connector: Some(db),
             process_data: Vec::new(),
             
@@ -60,6 +57,7 @@ impl Default for LinuxApp {
             last_net_down: 0.0,
             last_net_up: 0.0,
             cpu_process_usage: HashMap::new(),
+            frame_counter: 0,
         }
     }
 }
@@ -73,24 +71,27 @@ impl LinuxApp {
         };
 
         eframe::run_native(
-            "Linux Task Manager", 
+            "Linux System Monitor", 
             app_view_options,
             Box::new(|_cc| Ok(Box::new(LinuxApp::default()))),
         )
     }
 
     fn update_system_metrics(&mut self) {
-        // Refresh all system metrics using sysinfo
-        self.system.refresh_cpu_all();
-        self.system.refresh_memory();
-        self.networks.refresh(false);
-        self.disks.refresh(false);
+        // Increment frame counter
+        self.frame_counter += 1;
+        
+        // Refresh all system metrics using sysinfo (fast, no I/O)
+        self.system_data.hardware.refresh_cpu_all();
+        self.system_data.hardware.refresh_memory();
+        self.system_data.network.refresh(false);
+        self.system_data.disks.refresh(false);
 
         // Get CPU usage per process using log_parser's cpu_usage_calculator
-        self.cpu_process_usage = log_parser::cpu_usage_calculator(&mut self.system);
+        self.cpu_process_usage = log_parser::cpu_usage_calculator(&mut self.system_data.hardware);
 
         // Store per-core CPU history (keep last 60 samples)
-        for (core_idx, cpu) in self.system.cpus().iter().enumerate() {
+        for (core_idx, cpu) in self.system_data.hardware.cpus().iter().enumerate() {
             if core_idx < self.cpu_per_core_history.len() {
                 self.cpu_per_core_history[core_idx].push(cpu.cpu_usage() as f64);
                 if self.cpu_per_core_history[core_idx].len() > 60 {
@@ -100,7 +101,7 @@ impl LinuxApp {
         }
 
         // Store RAM history (keep last 60 samples) - in GB
-        let ram_gb = self.system.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
+        let ram_gb = self.system_data.hardware.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
         self.ram_history.push(ram_gb);
         if self.ram_history.len() > 60 {
             self.ram_history.remove(0);
@@ -109,7 +110,7 @@ impl LinuxApp {
         // Store Network history (keep last 60 samples)
         let mut down_speed = 0.0;
         let mut up_speed = 0.0;
-        for (_name, data) in self.networks.iter() {
+        for (_name, data) in self.system_data.network.iter() {
             down_speed += data.received() as f64 / 1024.0;
             up_speed += data.transmitted() as f64 / 1024.0;
         }
@@ -125,7 +126,7 @@ impl LinuxApp {
         // Calculate disk speeds
         let mut total_read_mb = 0.0;
         let mut total_write_mb = 0.0;
-        for disk in self.disks.list() {
+        for disk in self.system_data.disks.list() {
             total_read_mb += disk.usage().read_bytes as f64 / 1024.0 / 1024.0;
             total_write_mb += disk.usage().written_bytes as f64 / 1024.0 / 1024.0;
         }
@@ -138,36 +139,40 @@ impl LinuxApp {
             self.disk_write_history.remove(0);
         }
 
-        // Collect process data from /proc using log_parser
-        if let Ok(pids) = log_parser::read_folder_names() {
-            let mut collected_data = Vec::new();
-            for pid_str in pids {
-                if let Ok(pid) = pid_str.parse::<u32>() {
-                    let path = format!("/proc/{}/status", pid_str);
-                    if let Ok(file) = std::fs::File::open(&path) {
-                        if let Ok(process_data) = log_parser::process_data_definer(file) {
-                            // Merge CPU usage from our calculated map
-                            let mut process = process_data;
-                            if let Some(&cpu_val) = self.cpu_process_usage.get(&pid) {
-                                process.cpu_usage = cpu_val;
+        // ===== DATABASE OPERATIONS ONLY EVERY 3 FRAMES (every ~3 seconds) =====
+        // This prevents database I/O from blocking the UI every frame
+        if self.frame_counter % 3 == 0 {
+            // Collect process data from /proc using log_parser
+            if let Ok(pids) = log_parser::read_folder_names() {
+                let mut collected_data = Vec::new();
+                for pid_str in pids {
+                    if let Ok(pid) = pid_str.parse::<u32>() {
+                        let path = format!("/proc/{}/status", pid_str);
+                        if let Ok(file) = std::fs::File::open(&path) {
+                            if let Ok(process_data) = log_parser::process_data_definer(file) {
+                                // Merge CPU usage from our calculated map
+                                let mut process = process_data;
+                                if let Some(&cpu_val) = self.cpu_process_usage.get(&pid) {
+                                    process.cpu_usage = cpu_val;
+                                }
+                                collected_data.push(process);
                             }
-                            collected_data.push(process);
                         }
                     }
                 }
+
+                // Save to database
+                if let Some(ref mut connector) = self.db_connector {
+                    let _ = connector.save_data(collected_data);
+                }
             }
 
-            // Save to database
+            // Fetch process data from database
             if let Some(ref mut connector) = self.db_connector {
-                let _ = connector.save_data(collected_data);
-            }
-        }
-
-        // Fetch process data from database
-        if let Some(ref mut connector) = self.db_connector {
-            match connector.get_table_data() {
-                Ok(data) => self.process_data = data,
-                Err(_) => {}
+                match connector.get_table_data() {
+                    Ok(data) => self.process_data = data,
+                    Err(_) => {}
+                }
             }
         }
     }
@@ -182,7 +187,7 @@ impl eframe::App for LinuxApp {
             egui::ScrollArea::vertical()
                 .auto_shrink([false; 2])
                 .show(ui, |ui| {
-                    ui.heading("🐧 Linux Task Manager");
+                    ui.heading("🐧 Linux System Monitor");
                     ui.separator();
 
                     // ===== PER-CORE CPU GRAPH SECTION AT TOP =====
@@ -280,14 +285,14 @@ impl LinuxApp {
                     ui.label("CPU Usage:");
                     ui.colored_label(
                         egui::Color32::RED,
-                        format!("{:.2}%", self.system.global_cpu_usage())
+                        format!("{:.2}%", self.system_data.hardware.global_cpu_usage())
                     );
                     ui.label(""); // Empty cell for alignment
                     ui.end_row();
 
                     ui.label("RAM Usage:");
-                    let total_mem = self.system.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
-                    let used_mem = self.system.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
+                    let total_mem = self.system_data.hardware.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
+                    let used_mem = self.system_data.hardware.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
                     ui.colored_label(
                         egui::Color32::BLUE,
                         format!("{:.2} GB / {:.2} GB", used_mem, total_mem)
