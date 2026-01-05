@@ -1,4 +1,4 @@
-# Linux Task Manager - Complete Documentation
+# Linux System Monitor - Complete Documentation
 
 ## Table of Contents
 1. [Project Overview](#project-overview)
@@ -16,7 +16,7 @@
 
 ## Project Overview
 
-**Linux Task Manager** is a real-time system monitoring application written in Rust. It provides a graphical interface to visualize system performance metrics and monitor running processes.
+**Linux System Monitor** is a real-time system monitoring application written in Rust. It provides a graphical interface to visualize system performance metrics and monitor running processes.
 
 ### Purpose
 - Monitor CPU usage per core in real-time
@@ -105,7 +105,7 @@
 ## Directory Structure
 
 ```
-Linux_Task_Manager/
+Linux_System_Monitor/
 ├── Cargo.toml                 # Project manifest & dependencies
 ├── Cargo.lock                 # Locked dependency versions
 ├── README.md                  # This file
@@ -123,7 +123,7 @@ Linux_Task_Manager/
 │
 └── target/
     └── debug/
-        └── Linux_Task_Manager  # Compiled binary
+        └── Linux_System_Monitor  # Compiled binary
 ```
 
 ---
@@ -337,7 +337,7 @@ host=localhost user=postgres password=Fajita2231 dbname=db_project
 
 ⚠️ Update credentials to match your PostgreSQL setup.
 
-### Building & Running
+## Building & Running
 
 **Compile**
 ```bash
@@ -350,7 +350,7 @@ cargo run
 ```
 or
 ```bash
-./target/debug/Linux_Task_Manager
+./target/debug/Linux_System_Monitor
 ```
 
 **With elevated privileges** (if needed for all process info)

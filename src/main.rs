@@ -3,7 +3,6 @@ mod database_connect;
 mod process_data;
 mod log_parser;
 mod system_data;
-mod task_handler;
 
 use crate::app::LinuxApp;
 
