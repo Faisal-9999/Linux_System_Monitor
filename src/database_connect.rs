@@ -30,34 +30,31 @@ impl PostgresConnector {
                         ram_usage = EXCLUDED.ram_usage,
                         state = EXCLUDED.state,
                         threads = EXCLUDED.threads",
-                &[
+                        &[
                             &(item.pid as i32), 
-                            &(item.ppid as i32), 
-                            &item.process_name, 
-                            &item.cpu_usage, 
-                            &item.ram_usage, 
-                            &item.state,
-                            &(item.threads_used as i32) 
+                            &(item.ppid as i32), &item.process_name, 
+                            &item.cpu_usage, &item.ram_usage, 
+                            &item.state, &(item.threads_used as i32) 
                         ]
             )?;
         }
         
         transaction.commit()?;
-        
 
         Ok(())
     }
 
-pub fn init_table(&mut self) {
-        self.client.batch_execute("CREATE TABLE IF NOT EXISTS Process_Table (
-            pid INTEGER PRIMARY KEY,
-            ppid INTEGER,
-            name TEXT NOT NULL,
-            cpu_usage DOUBLE PRECISION, 
-            ram_usage DOUBLE PRECISION,
-            state TEXT,
-            threads INTEGER
-        )").unwrap();
+    pub fn init_table(&mut self) {
+            self.client.batch_execute
+            ("CREATE TABLE IF NOT EXISTS Process_Table (
+                pid INTEGER PRIMARY KEY,
+                ppid INTEGER,
+                name TEXT NOT NULL,
+                cpu_usage DOUBLE PRECISION, 
+                ram_usage DOUBLE PRECISION,
+                state TEXT,
+                threads INTEGER
+                )").unwrap();
     }
 
     pub fn get_table_data(&mut self) -> Result<Vec<ProcessData>, postgres::Error> {
@@ -66,7 +63,7 @@ pub fn init_table(&mut self) {
             &[]
         )?;
 
-        let mut process_list = Vec::new();
+        let mut process_list: Vec<ProcessData> = Vec::new();
 
         for row in rows {
             let process = ProcessData {

@@ -63,7 +63,6 @@ impl AttributeAndValue {
     }
 }
 
-
 //NEED TO WORK ON THIS AND MAKE IT FASTER
 
 //I think its faster now not sure

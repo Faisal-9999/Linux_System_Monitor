@@ -12,7 +12,6 @@ pub struct LinuxApp {
     db_connector: Option<PostgresConnector>,
     process_data: Vec<ProcessData>,
 
-
     cpu_per_core_history: Vec<Vec<f64>>,
     
     ram_history: Vec<f64>,
@@ -132,10 +131,12 @@ impl LinuxApp {
             self.last_disk_write = snap.overall_disk_write_mb;
             self.disk_read_history.push(self.last_disk_read);
             self.disk_write_history.push(self.last_disk_write);
+
             if self.disk_read_history.len() > 60 {
                 self.disk_read_history.remove(0);
                 self.disk_write_history.remove(0);
             }
+
         } else {
             self.system_data.hardware.refresh_memory();
             let ram_gb = self.system_data.hardware.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0;

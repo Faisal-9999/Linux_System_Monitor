@@ -31,11 +31,11 @@
 ### System Diagram
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                         GUI (eframe/egui)                     │
-│  Per-Core CPU Graph | System Stats | Process Table           │
+│                         GUI (eframe/egui)                   │
+│  Per-Core CPU Graph | System Stats | Process Table          |
 └──────────────────────────────┬──────────────────────────────┘
                                │
-                ┌──────────────┼──────────────┐
+                ┌──────────────┼────-─────────┐
                 │              │              │
     ┌───────────▼──────┐  ┌───▼────────┐  ┌──▼────────────┐
     │  CPU/RAM/NET     │  │ /proc FS   │  │ Disk I/O      │
